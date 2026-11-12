@@ -72,6 +72,10 @@
   .spinner { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   #settings { display: none; }
+  .tabs { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; margin-bottom: 14px; }
+  .tabs button { flex: 1; border: none; background: none; color: var(--muted); font-size: 15px; font-weight: 600; padding: 10px; border-radius: 9px; }
+  .tabs button.on { background: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { .tabs button.on { color: #062a26; } }
   .hist-item { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .hist-item:last-child { border-bottom: none; }
   .hist-item b { font-variant-numeric: tabular-nums; }
@@ -100,6 +104,12 @@
     </div>
     <p class="muted">キーは <a href="https://aistudio.google.com/apikey" style="color:var(--accent)">Google AI Studio</a> で発行できます。</p>
   </section>
+
+  <div class="tabs">
+    <button id="tabFree" data-mode="free">🆓 無料モード</button>
+    <button id="tabAi" data-mode="ai">🤖 AIモード</button>
+  </div>
+  <p class="muted" id="modeNote" style="margin:-6px 4px 12px"></p>
 
   <section class="card">
     <label class="small" for="input">電話番号を入力・貼り付け（スクショも貼り付けOK）</label>
@@ -239,7 +249,7 @@
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = (json.error && json.error.message) || res.statusText;
-      if (res.status === 429) throw new Error('利用上限に達しました（429）。\n無料枠でGoogle検索連携が使えない場合は、AI Studioで支払い設定を有効にすると動きます。\n無料モードで使うなら「設定」でAPIキーを消して保存してください。\n\n' + msg);
+      if (res.status === 429) throw new Error('利用上限に達しました（429）。\n無料枠でGoogle検索連携が使えない場合は、AI Studioで支払い設定を有効にすると動きます。\n上の「無料モード」に切り替えれば、キーなしで使えます。\n\n' + msg);
       if (res.status === 400 && /api key/i.test(msg)) throw new Error('APIキーが正しくないようです。設定を確認してください。');
       if (res.status === 404) throw new Error('このモデルは使えなくなっています。「設定」で別のモデルを選んでください。\n\n' + msg);
       throw new Error(`エラー (${res.status}): ${msg}`);
@@ -367,7 +377,7 @@
     $('resultCard').style.display = 'block';
     $('result').innerHTML = '<span class="spinner"></span><span class="muted">ネットで調べています…</span>';
     try {
-      if (!store.get('apiKey', '')) { await runFree(text); return; }
+      if (mode === 'free') { await runFree(text); return; }
       const { out, sources } = await ask(text);
       const r = parse(out);
       render(r, sources, out);
@@ -379,7 +389,26 @@
     }
   });
 
+  // ---------- Mode tabs ----------
+  let mode = 'free';
+  function setMode(m, push) {
+    mode = m === 'ai' ? 'ai' : 'free';
+    store.set('mode', mode);
+    $('tabFree').classList.toggle('on', mode === 'free');
+    $('tabAi').classList.toggle('on', mode === 'ai');
+    $('modeNote').textContent = mode === 'free'
+      ? '番号を読み取って、検索結果をボタンで開きます（APIキー不要）'
+      : 'AIがネットで調べて「〇〇の番号です」と要約します（APIキーと支払い設定が必要）';
+    $('resultCard').style.display = 'none';
+    if (mode === 'ai' && !store.get('apiKey', '')) $('settings').style.display = 'block';
+    if (push && location.hash !== '#' + mode) history.replaceState(null, '', '#' + mode);
+  }
+  $('tabFree').addEventListener('click', () => setMode('free', true));
+  $('tabAi').addEventListener('click', () => setMode('ai', true));
+  window.addEventListener('hashchange', () => setMode(location.hash.slice(1)));
+
   loadSettings();
+  setMode(location.hash === '#ai' || location.hash === '#free' ? location.hash.slice(1) : store.get('mode', 'free'));
   renderHist();
 
   if ('serviceWorker' in navigator) {
